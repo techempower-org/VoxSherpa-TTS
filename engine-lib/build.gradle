@@ -1,0 +1,70 @@
+// Engine-only Android Library that re-exposes a subset of the existing
+// `app/src/main/java/com/CodeBySonu/VoxSherpa/` files as a reusable AAR for
+// downstream consumers (currently storyvox).
+//
+// The classes themselves live in `:app` as before — this module never moves
+// or duplicates source. We just point Gradle's java.srcDirs at the existing
+// path and whitelist the engine classes via `include`. Upstream merges
+// touch only `:app/src/main/java/...` and our engine library picks up the
+// changes automatically on the next build.
+//
+// JitPack tags this module's AAR per release. Storyvox depends on it via
+// `implementation("com.github.jphein:VoxSherpa-TTS:vX.Y.Z:engine-lib")`.
+
+plugins {
+    id 'com.android.library'
+}
+
+repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
+android {
+    namespace 'com.CodeBySonu.VoxSherpa.engine'
+    compileSdk 34
+
+    useLibrary 'org.apache.http.legacy'
+
+    defaultConfig {
+        minSdkVersion 30
+        targetSdkVersion 36
+        ndk { abiFilters 'arm64-v8a', 'x86_64' }
+
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    sourceSets {
+        main {
+            // Source files live in :app's tree — never duplicated. This
+            // module is purely a build-system re-projection.
+            java.srcDirs = ['../app/src/main/java']
+            java.includes = [
+                'com/CodeBySonu/VoxSherpa/KokoroEngine.java',
+                'com/CodeBySonu/VoxSherpa/VoiceEngine.java',
+                'com/CodeBySonu/VoxSherpa/Sonic.java',
+                'com/CodeBySonu/VoxSherpa/AudioEmotionHelper.java',
+                'com/CodeBySonu/VoxSherpa/KokoroVoiceHelper.java',
+                'com/CodeBySonu/VoxSherpa/GenerationParams.java',
+            ]
+            manifest.srcFile 'src/main/AndroidManifest.xml'
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging true
+        }
+        pickFirst '**/*.so'
+    }
+}
+
+dependencies {
+    implementation 'com.github.k2-fsa:sherpa-onnx:1.12.26'
+}
