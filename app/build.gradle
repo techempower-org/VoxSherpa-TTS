@@ -18,8 +18,8 @@ android {
         namespace "com.CodeBySonu.VoxSherpa"
         minSdkVersion 30
         targetSdkVersion 36
-        versionCode 8
-        versionName "2.6"
+        versionCode 9
+        versionName "2.6.1"
         
         // Single APK configuration supporting both 64-bit Mobile and 64-bit Emulator
         ndk {
