@@ -12,6 +12,9 @@ import java.util.ArrayList;
 import java.util.Locale;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 // Model and Helper Imports
 import com.CodeBySonu.VoxSherpa.VoiceEngine;
@@ -267,39 +270,84 @@ public class VoxSherpaTtsService extends TextToSpeechService {
             }
             if (sentences.isEmpty()) sentences.add(text);
 
-            // 5. Generate Audio and Stream to System OS
-            for (String sentence : sentences) {
-                if (isSynthesisCancelled) break;
+            // 5. Generate Audio and Stream to System OS — PIPELINED.
+            //
+            // Without pipelining, every sub-sentence introduces an audible gap
+            // equal to the neural-inference time for the NEXT sub-sentence
+            // (typical ~100–500ms with Piper). The synthesis thread spends that
+            // time generating PCM while the audio framework's buffer drains
+            // empty → users hear silence between clauses.
+            //
+            // Pipeline: kick off generation of sub N+1 on a single-threaded
+            // executor while we stream sub N (which blocks on audioAvailable
+            // waiting for the framework to consume the buffer). By the time
+            // streaming finishes, the next PCM is usually ready, so the only
+            // gap is the audioAvailable transition between buffers, not the
+            // full generation pass.
+            //
+            // The pool is single-threaded because the underlying engines
+            // (KokoroEngine, VoiceEngine) hold a single ONNX/sherpa-onnx
+            // session that is not safe to call concurrently. Calling them
+            // from the worker thread while the synthesis thread is in
+            // _streamAudioChunks is fine because those phases never overlap
+            // for the same engine instance.
+            ExecutorService genPool = Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "VoxSherpa-prefetch");
+                t.setPriority(Thread.NORM_PRIORITY);
+                return t;
+            });
+            try {
+                final boolean punct = isPunctOn;
+                final boolean emote = isEmotionOn;
+                final boolean useKokoro = isKokoro;
+                final float spd = engineSpeed;
+                final float pit = enginePitch;
 
-                byte[] chunkPcm = null;
-                
-                if (isPunctOn || isEmotionOn) {
-                    chunkPcm = AudioEmotionHelper.processAndGenerate(
-                        sentence, isPunctOn, isEmotionOn, engineSpeed, enginePitch, 1.0f
-                    );
-                } else {
-                    if (isKokoro) {
-                        chunkPcm = KokoroEngine.getInstance().generateAudioPCM(sentence, engineSpeed, enginePitch);
+                Future<byte[]> nextPcm = sentences.isEmpty()
+                    ? null
+                    : genPool.submit(() -> generateOne(sentences.get(0), punct, emote, useKokoro, spd, pit));
+
+                for (int i = 0; i < sentences.size(); i++) {
+                    if (isSynthesisCancelled) break;
+
+                    // Wait for the chunk that was queued last iteration (or the
+                    // very first one). nextPcm always points at sentence i.
+                    byte[] chunkPcm;
+                    try {
+                        chunkPcm = nextPcm == null ? null : nextPcm.get();
+                    } catch (Exception e) {
+                        chunkPcm = null;
+                    }
+
+                    // Immediately queue sentence i+1 so generation overlaps with
+                    // streaming of sentence i.
+                    if (i + 1 < sentences.size() && !isSynthesisCancelled) {
+                        final String nextSentence = sentences.get(i + 1);
+                        nextPcm = genPool.submit(
+                            () -> generateOne(nextSentence, punct, emote, useKokoro, spd, pit)
+                        );
                     } else {
-                        chunkPcm = VoiceEngine.getInstance().generateAudioPCM(sentence, engineSpeed, enginePitch);
+                        nextPcm = null;
+                    }
+
+                    if (isSynthesisCancelled) break;
+
+                    if (chunkPcm != null && chunkPcm.length > 0) {
+                        StreamResult result = _streamAudioChunks(chunkPcm, callback);
+                        if (result == StreamResult.PARTIAL_FAILURE) {
+                            // audioAvailable() rejected a chunk mid-stream. The utterance
+                            // is incomplete — surface as error rather than silent partial success.
+                            callback.error();
+                            hasError = true;
+                            return;
+                        }
+                        if (result == StreamResult.COMPLETE) {
+                            emittedAudio = true;
+                        }
                     }
                 }
-
-                if (isSynthesisCancelled) break;
-
-                if (chunkPcm != null && chunkPcm.length > 0) {
-                    StreamResult result = _streamAudioChunks(chunkPcm, callback);
-                    if (result == StreamResult.PARTIAL_FAILURE) {
-                        // audioAvailable() rejected a chunk mid-stream. The utterance
-                        // is incomplete — surface as error rather than silent partial success.
-                        callback.error();
-                        hasError = true;
-                        return;
-                    }
-                    if (result == StreamResult.COMPLETE) {
-                        emittedAudio = true;
-                    }
-                }
+            } finally {
+                genPool.shutdownNow();
             }
 
             // If start() was called but the engine produced no PCM at all (model
@@ -359,5 +407,35 @@ public class VoxSherpaTtsService extends TextToSpeechService {
             return wroteAny ? StreamResult.PARTIAL_FAILURE : StreamResult.NO_AUDIO;
         }
         return wroteAny ? StreamResult.COMPLETE : StreamResult.NO_AUDIO;
+    }
+
+    /**
+     * Generate PCM for one sub-sentence on whatever thread the caller chose.
+     * Routed through AudioEmotionHelper if punct/emotion features are on,
+     * otherwise straight through the relevant engine. Returns null on
+     * inference failure — the caller treats null as "skip this sub" and
+     * the top-level emittedAudio guard catches "all subs failed".
+     */
+    private byte[] generateOne(
+        String sentence,
+        boolean punctOn,
+        boolean emotionOn,
+        boolean useKokoro,
+        float speed,
+        float pitch
+    ) {
+        try {
+            if (punctOn || emotionOn) {
+                return AudioEmotionHelper.processAndGenerate(
+                    sentence, punctOn, emotionOn, speed, pitch, 1.0f
+                );
+            }
+            if (useKokoro) {
+                return KokoroEngine.getInstance().generateAudioPCM(sentence, speed, pitch);
+            }
+            return VoiceEngine.getInstance().generateAudioPCM(sentence, speed, pitch);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
