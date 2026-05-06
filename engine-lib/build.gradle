@@ -78,13 +78,14 @@ dependencies {
 
 // JitPack publishing — invokes `publishToMavenLocal` on a tagged build and
 // pushes the resulting AAR to its public Maven cache so consumers can
-// reference it as `com.github.jphein:VoxSherpa-TTS:vX.Y.Z:engine-lib`.
+// reference it as `com.github.jphein.VoxSherpa-TTS:engine-lib:vX.Y.Z`
+// (multi-module convention; single-module would be `com.github.User:Repo:vX`).
 afterEvaluate {
     publishing {
         publications {
             release(MavenPublication) {
                 from components.release
-                groupId = (project.findProperty('group') ?: 'com.github.jphein').toString()
+                groupId = 'com.github.jphein.VoxSherpa-TTS'
                 artifactId = 'engine-lib'
                 version = (project.findProperty('version') ?: 'unspecified').toString()
             }
