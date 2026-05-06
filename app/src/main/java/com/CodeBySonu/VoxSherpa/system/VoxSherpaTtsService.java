@@ -139,21 +139,30 @@ public class VoxSherpaTtsService extends TextToSpeechService {
     @Override
     protected void onSynthesizeText(SynthesisRequest request, SynthesisCallback callback) {
         isSynthesisCancelled = false;
-        boolean hasError = false; // The Fix: Track errors to avoid duplicate or conflicting callback triggers
-        
+        boolean hasError = false; // Track errors to avoid duplicate or conflicting callback triggers
+        boolean emittedAudio = false; // Track whether any PCM was actually streamed; if not, surface error()
+
         try {
             SharedPreferences sp = getSharedPreferences("sp1", MODE_PRIVATE);
             SharedPreferences sp3 = getSharedPreferences("sp3", MODE_PRIVATE);
-            
+
             String modelType = sp.getString("active_model_type", "");
             CharSequence charText = request.getCharSequenceText();
-            
-            // 1. Handle Empty Text Gracefully
-            if (modelType.isEmpty() || charText == null || charText.toString().trim().isEmpty()) {
-                // OS Rule: start() MUST be called before done().
-                // We call start with default format, then return so the finally block safely calls done().
+
+            // 1a. Empty text is a legitimate empty utterance — emit a valid (silent) frame.
+            if (charText == null || charText.toString().trim().isEmpty()) {
                 callback.start(22050, AudioFormat.ENCODING_PCM_16BIT, 1);
-                return; 
+                return;
+            }
+
+            // 1b. No model loaded → surface as error() instead of start()+done() with no audio.
+            // Without this, every synth call returns "successfully" but produces silence, which
+            // looks like dry-running to clients (they see onStart/onDone but hear nothing). Any
+            // client that watches for sub-real-time onStart cadence will detect a runaway here.
+            if (modelType.isEmpty()) {
+                callback.error();
+                hasError = true;
+                return;
             }
             
             String text = charText.toString().trim();
@@ -273,40 +282,56 @@ public class VoxSherpaTtsService extends TextToSpeechService {
                 if (isSynthesisCancelled) break;
 
                 if (chunkPcm != null && chunkPcm.length > 0) {
-                    _streamAudioChunks(chunkPcm, callback);
+                    if (_streamAudioChunks(chunkPcm, callback)) {
+                        emittedAudio = true;
+                    }
                 }
+            }
+
+            // If start() was called but the engine produced no PCM at all (model
+            // loaded but generation silently failed for every sentence), surface
+            // the failure to the client instead of returning success with silence.
+            if (!emittedAudio && !isSynthesisCancelled) {
+                callback.error();
+                hasError = true;
             }
 
         } catch (Exception e) {
             callback.error();
             hasError = true;
         } finally {
-            // The Fix: Guarantees done() is only called if error() was NOT called.
+            // Guarantees done() is only called if error() was NOT called.
             if (!hasError) {
                 callback.done();
             }
         }
     }
 
-    // Dynamic Chunk Streaming logic mapped to OS Buffer Limits
-    private void _streamAudioChunks(byte[] pcm, SynthesisCallback callback) {
+    // Dynamic Chunk Streaming logic mapped to OS Buffer Limits.
+    // Returns true if at least one PCM chunk was successfully delivered to the
+    // callback; callers use this to detect engine "dry runs" where audio was
+    // expected but never written.
+    private boolean _streamAudioChunks(byte[] pcm, SynthesisCallback callback) {
+        boolean wroteAny = false;
         try {
             int maxBufferSize = callback.getMaxBufferSize();
-            int chunkSize = (maxBufferSize > 0) ? maxBufferSize : 8192; 
+            int chunkSize = (maxBufferSize > 0) ? maxBufferSize : 8192;
 
             for (int offset = 0; offset < pcm.length; offset += chunkSize) {
                 if (isSynthesisCancelled) {
                     break;
                 }
-                
+
                 int end = Math.min(offset + chunkSize, pcm.length);
                 int writeStatus = callback.audioAvailable(pcm, offset, end - offset);
-                
+
                 if (writeStatus != TextToSpeech.SUCCESS) {
-                    break; 
+                    break;
                 }
+                wroteAny = true;
             }
         } catch (Exception ignored) {
         }
+        return wroteAny;
     }
 }
