@@ -140,6 +140,20 @@ public class VoiceEngine {
         espeakDataPath = destDir.getAbsolutePath();
     }
 
+    /**
+     * Override for [getOptimalThreadCount]'s default. 0 (or negative)
+     * means "use the auto heuristic"; a positive value forces that
+     * exact numThreads count for sherpa-onnx's internal threading.
+     * Set via [loadModel]'s numThreads-overload added in v2.7.10.
+     */
+    private int explicitNumThreads = 0;
+
+    /** Effective numThreads — explicit override if set, otherwise the
+     *  auto heuristic. */
+    private int effectiveNumThreads() {
+        return explicitNumThreads > 0 ? explicitNumThreads : getOptimalThreadCount();
+    }
+
     // ── Provider fallback: XNNPACK → CPU ────────────────────────────────────
     private OfflineTts _createTtsWithFallback(String modelPath, String tokensPath) {
         String[] providers = {"xnnpack", "cpu"};
@@ -156,7 +170,7 @@ public class VoiceEngine {
 
                 OfflineTtsModelConfig modelConfig = new OfflineTtsModelConfig();
                 modelConfig.setVits(vits);
-                modelConfig.setNumThreads(getOptimalThreadCount());
+                modelConfig.setNumThreads(effectiveNumThreads());
                 modelConfig.setProvider(provider);
                 modelConfig.setDebug(false);
 
@@ -180,6 +194,21 @@ public class VoiceEngine {
     }
 
     // ── Load model ───────────────────────────────────────────────────────────
+    /**
+     * v2.7.10 — overload that lets the caller override the numThreads
+     * passed to sherpa-onnx. Pass [numThreads] = 0 for the auto
+     * heuristic (same as the base [loadModel]). Used by storyvox's
+     * "Threads per engine" Settings slider so users on thermally-
+     * constrained devices (Snapdragon 888 famously throttles after
+     * minutes of sustained inference) can dial back from the auto
+     * value to leave thermal headroom.
+     */
+    public synchronized String loadModel(
+            Context context, String modelPath, String tokensPath, int numThreads) {
+        this.explicitNumThreads = numThreads;
+        return loadModel(context, modelPath, tokensPath);
+    }
+
     public synchronized String loadModel(Context context, String modelPath, String tokensPath) {
         cancelRequested = false; // Reset on new load
         if (tts != null && activeModelUri.equals(modelPath)) return "Success";

@@ -84,6 +84,17 @@ public class KokoroEngine {
     // utilizes ALL available cores during Kokoro inference. See VoiceEngine
     // for the full rationale; mirrored here so both engines respect the
     // same multi-core policy regardless of which voice is loaded.
+    //
+    // v2.7.10 — [explicitNumThreads] overrides the auto heuristic when set
+    // to a positive value via [loadModel]'s 5-arg overload. Lets storyvox
+    // dial back from "all 8 cores" on thermally-constrained chips
+    // (Snapdragon 888 famously throttles after sustained inference).
+    private int explicitNumThreads = 0;
+
+    private int effectiveNumThreads() {
+        return explicitNumThreads > 0 ? explicitNumThreads : getOptimalThreadCount();
+    }
+
     private int getOptimalThreadCount() {
         int cores = Runtime.getRuntime().availableProcessors();
         if (cores >= 8) return 8;
@@ -152,7 +163,7 @@ public class KokoroEngine {
 
                 OfflineTtsModelConfig modelConfig = new OfflineTtsModelConfig();
                 modelConfig.setKokoro(kokoroConfig);
-                modelConfig.setNumThreads(getOptimalThreadCount());
+                modelConfig.setNumThreads(effectiveNumThreads());
                 modelConfig.setProvider(provider);
                 modelConfig.setDebug(false);
 
@@ -177,6 +188,20 @@ public class KokoroEngine {
     }
 
     // ── Load model ───────────────────────────────────────────────────────────
+    /**
+     * v2.7.10 — overload that lets the caller override the numThreads
+     * passed to sherpa-onnx. Pass [numThreads] = 0 for the auto
+     * heuristic (same as the 4-arg [loadModel]). Used by storyvox's
+     * "Threads per engine" Settings slider so users on thermally-
+     * constrained devices can dial back from the auto value.
+     */
+    public synchronized String loadModel(Context context, String onnxPath,
+                                          String tokensPath, String voicesBinPath,
+                                          int numThreads) {
+        this.explicitNumThreads = numThreads;
+        return loadModel(context, onnxPath, tokensPath, voicesBinPath);
+    }
+
     public synchronized String loadModel(Context context, String onnxPath,
                                           String tokensPath, String voicesBinPath) {
         cancelRequested = false; // Reset on new load
