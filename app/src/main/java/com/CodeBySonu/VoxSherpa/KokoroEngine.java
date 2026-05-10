@@ -24,12 +24,27 @@ public class KokoroEngine {
     private static volatile KokoroEngine instance;
     private OfflineTts tts;
     private String activeModelUri = "";
-    
     // Tracks the current language context to prevent unnecessary reloads
-    private String activeLangCode = ""; 
+    // Plus tokens/voices-bin paths and context so [setSilenceScale] can
+    // rebuild the OfflineTts mid-session against the same model files.
+    private String activeTokensUri = "";
+    private String activeVoicesBinUri = "";
+    private Context activeContext = null;
+    private String activeLangCode = "";
     private String espeakDataPath = "";
     private int activeSpeakerId = 31;
     private volatile boolean cancelRequested = false;
+
+    /** Within-sentence silence scale — controls the engine-level pause
+     *  applied around commas and mid-phrase punctuation. Default 0.2f
+     *  matches the previously-hardcoded behavior; consumers can drive
+     *  it from a UI slider (e.g. storyvox's punctuation-cadence
+     *  control) via [setSilenceScale]. Setting it on a loaded engine
+     *  rebuilds the OfflineTts so the change takes effect mid-session
+     *  on the next generated sentence — mirrors VoiceEngine's
+     *  [VoiceEngine.setNoiseScale] pattern. */
+    public static final float DEFAULT_SILENCE_SCALE = 0.2f;
+    private volatile float silenceScale = DEFAULT_SILENCE_SCALE;
 
     private KokoroEngine() {}
 
@@ -122,8 +137,12 @@ public class KokoroEngine {
 
                 OfflineTtsConfig config = new OfflineTtsConfig();
                 config.setModel(modelConfig);
+                // Keep upstream's maxNumSentences=1 (System TTS prefers
+                // per-sentence inference for snappy progress callbacks).
+                // The PR's contribution is the silenceScale FIELD — let
+                // it drive the value instead of the hardcoded 0.2f.
                 config.setMaxNumSentences(1);
-                config.setSilenceScale(0.2f);
+                config.setSilenceScale(silenceScale);
 
                 OfflineTts candidate = new OfflineTts(null, config);
 
@@ -177,7 +196,10 @@ public class KokoroEngine {
             if (tts == null) return "Error: Model load failed on all providers.";
 
             activeModelUri = onnxPath;
-            activeLangCode = targetLangCode; 
+            activeTokensUri = tokensPath;
+            activeVoicesBinUri = voicesBinPath;
+            activeContext = context.getApplicationContext();
+            activeLangCode = targetLangCode;
             return "Success";
 
         } catch (Throwable t) {
@@ -294,6 +316,54 @@ public class KokoroEngine {
         }
     }
 
+    // ── Silence scale (within-sentence pauses) ──────────────────────────────
+    // The OfflineTtsConfig.silenceScale parameter controls the engine's
+    // pause around commas and mid-phrase punctuation. Surfacing it as a
+    // public knob lets consumers (e.g. storyvox's punctuation-cadence
+    // slider) drive the cadence without forking the engine.
+    //
+    // Setting it on a loaded engine triggers an immediate rebuild of
+    // the OfflineTts so the next [generateAudioPCM] call honors the new
+    // scale — mirrors VoiceEngine's setNoiseScale + _reloadIfActive
+    // pattern. The no-op fast-path skips both the assignment and the
+    // reload when the value matches the active scale, so settings UIs
+    // can call freely on every recomposition.
+    public synchronized void setSilenceScale(float scale) {
+        if (this.silenceScale == scale) return;
+        this.silenceScale = scale;
+        _reloadIfActive();
+    }
+
+    public float getSilenceScale() {
+        return silenceScale;
+    }
+
+    // Internal: rebuild OfflineTts with the current (model, tokens,
+    // voicesBin, silenceScale) values. Caller must hold the monitor on
+    // `this`. No-op if no model is loaded. Mirrors the same pattern
+    // VoiceEngine uses for its noise-scale setters.
+    private void _reloadIfActive() {
+        if (tts == null
+                || activeModelUri.isEmpty()
+                || activeTokensUri.isEmpty()
+                || activeVoicesBinUri.isEmpty()
+                || activeContext == null) {
+            return;
+        }
+        cancelRequested = true;
+        OfflineTts old = tts;
+        OfflineTts replacement = createTtsWithFallback(
+                activeModelUri, activeTokensUri, activeVoicesBinUri);
+        if (replacement != null) {
+            tts = replacement;
+            try { old.release(); } catch (Throwable ignored) {}
+        }
+        // If replacement fails, we keep the old engine — better to
+        // play with the previous silence scale than to drop into a
+        // null state mid-session. cancelRequested gets reset on the
+        // next loadModel call.
+    }
+
     // ── State ────────────────────────────────────────────────────────────────
     public synchronized boolean isReady() {
         return tts != null;
@@ -305,7 +375,10 @@ public class KokoroEngine {
             try { tts.release(); } catch (Throwable ignored) {}
             tts = null;
             activeModelUri = "";
-            activeLangCode = ""; 
+            activeTokensUri = "";
+            activeVoicesBinUri = "";
+            activeContext = null;
+            activeLangCode = "";
         }
     }
 }
