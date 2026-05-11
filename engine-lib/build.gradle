@@ -1,15 +1,16 @@
 // Engine-only Android Library that re-exposes a subset of the existing
 // `app/src/main/java/com/CodeBySonu/VoxSherpa/` files as a reusable AAR for
-// downstream consumers (currently storyvox).
+// downstream Android consumers.
 //
 // The classes themselves live in `:app` as before — this module never moves
 // or duplicates source. We just point Gradle's java.srcDirs at the existing
-// path and whitelist the engine classes via `include`. Upstream merges
-// touch only `:app/src/main/java/...` and our engine library picks up the
+// path and whitelist the engine classes via `include`. Edits to those files
+// land in `:app/src/main/java/...` as usual, and this library picks up the
 // changes automatically on the next build.
 //
-// JitPack tags this module's AAR per release. Storyvox depends on it via
-// `implementation("com.github.jphein:VoxSherpa-TTS:vX.Y.Z:engine-lib")`.
+// JitPack tags this module's AAR per release. Downstream apps depend on it
+// via (multi-module convention, owner = repo owner at JitPack-build time):
+//   implementation("com.github.<owner>.VoxSherpa-TTS:engine-lib:vX.Y.Z")
 
 plugins {
     id 'com.android.library'
@@ -78,14 +79,18 @@ dependencies {
 
 // JitPack publishing — invokes `publishToMavenLocal` on a tagged build and
 // pushes the resulting AAR to its public Maven cache so consumers can
-// reference it as `com.github.jphein.VoxSherpa-TTS:engine-lib:vX.Y.Z`
-// (multi-module convention; single-module would be `com.github.User:Repo:vX`).
+// reference it under the multi-module convention
+// `com.github.<owner>.VoxSherpa-TTS:engine-lib:vX.Y.Z`. The `GROUP` system
+// property is injected by JitPack at build time and resolves to the owner
+// of the tagged repo automatically; the fallback covers local builds and
+// manual `publishToMavenLocal` invocations.
 afterEvaluate {
     publishing {
         publications {
             release(MavenPublication) {
                 from components.release
-                groupId = 'com.github.jphein.VoxSherpa-TTS'
+                groupId = (project.findProperty('GROUP')
+                          ?: 'com.github.CodeBySonu95.VoxSherpa-TTS').toString()
                 artifactId = 'engine-lib'
                 version = (project.findProperty('version') ?: 'unspecified').toString()
             }
