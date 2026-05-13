@@ -21,6 +21,15 @@ public class KokoroEngine {
         } catch (UnsatisfiedLinkError ignored) {}
     }
 
+    /**
+     * Sonic pitch-interpolation quality. Mirror of
+     * {@link VoiceEngine#sonicQuality}; see that field's javadoc.
+     * Held as a separate field because the two engines are
+     * independent classes with no shared base. storyvox writes
+     * both together when the user flips the Settings toggle.
+     */
+    public static volatile int sonicQuality = 1;
+
     private static volatile KokoroEngine instance;
     private OfflineTts tts;
     private String activeModelUri = "";
@@ -300,10 +309,10 @@ public class KokoroEngine {
                 if (sampleRate > 0) {
                     try {
                         com.CodeBySonu.VoxSherpa.Sonic sonic = new com.CodeBySonu.VoxSherpa.Sonic(sampleRate, 1);
-                        // storyvox #193 — quality=1 for higher-quality pitch
-                        // interpolation. See VoiceEngine.java for the
-                        // rationale; both engines paired for consistency.
-                        sonic.setQuality(1);
+                        // storyvox #193 — Sonic quality parameterized via
+                        // KokoroEngine.sonicQuality (default 1). See the
+                        // field's javadoc for rationale.
+                        sonic.setQuality(sonicQuality);
                         sonic.setPitch(pitchValue);
                         sonic.writeShortToStream(shortSamples, shortSamples.length);
                         sonic.flushStream();

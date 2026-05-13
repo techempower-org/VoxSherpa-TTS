@@ -21,6 +21,19 @@ public class VoiceEngine {
         } catch (UnsatisfiedLinkError ignored) {}
     }
 
+    /**
+     * Sonic pitch-interpolation quality. Read at each generateAudioPCM
+     * call when a Sonic instance is created for pitch shifting.
+     * Defaults to 1 (higher quality) — storyvox #193 establishes this
+     * as the project default since chapter PCM is pre-rendered and
+     * cached, so the ~20% CPU cost lands once per chapter. Callers
+     * with tighter CPU budgets can write 0 to revert to Sonic's
+     * upstream default ("virtually as good as 1, but very much faster"
+     * — Bill Cox, Sonic.java:203). volatile so writes from a Settings
+     * thread are visible to the render thread immediately.
+     */
+    public static volatile int sonicQuality = 1;
+
     private static volatile VoiceEngine instance;
     private OfflineTts tts;
     private String activeModelUri = "";
@@ -280,13 +293,10 @@ public class VoiceEngine {
                 if (cancelRequested) return null;
                 int sampleRate = localTts.sampleRate();
                 com.CodeBySonu.VoxSherpa.Sonic sonic = new com.CodeBySonu.VoxSherpa.Sonic(sampleRate, 1);
-                // storyvox #193 — flip to quality=1 for higher-quality pitch
-                // interpolation. Sonic's default 0 is faster but virtually
-                // equivalent only at neutral pitch; pitch-shifted output
-                // benefits noticeably at quality=1. Storyvox pre-renders
-                // PCM (post-#97 cache) so the CPU hit is paid once per
-                // chapter, not per playback — favorable trade.
-                sonic.setQuality(1);
+                // storyvox #193 — Sonic quality is parameterized via the
+                // public static field VoiceEngine.sonicQuality (default 1).
+                // See the field's javadoc for the rationale.
+                sonic.setQuality(sonicQuality);
                 sonic.setPitch(pitchValue);
                 sonic.writeShortToStream(shortSamples, shortSamples.length);
                 sonic.flushStream();
