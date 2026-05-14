@@ -30,6 +30,42 @@ public class KokoroEngine {
      */
     public static volatile int sonicQuality = 1;
 
+    /**
+     * Per-voice lexicon override (storyvox #197). Mirror of
+     * {@link VoiceEngine#voiceLexicon}; see that field's javadoc for
+     * the full rationale and storyvox-side wiring contract. Passed
+     * through to sherpa-onnx via
+     * {@link OfflineTtsKokoroModelConfig#setLexicon}. Default empty
+     * string = use the model's built-in lexicon.
+     *
+     * Storyvox sets this from Settings → Voice → per-voice Advanced
+     * expander. Engine instantiation reads the value at construction
+     * time via [createTtsWithFallback], so a Settings change requires
+     * a voice reload to take effect.
+     */
+    public static volatile String voiceLexicon = "";
+
+    /**
+     * Kokoro phonemizer language override (storyvox #198). When set
+     * to a non-empty language code (e.g. "es" for Spanish dialogue
+     * inside an English book), the engine forces the phonemizer to
+     * that language instead of using the voice metadata's
+     * [KokoroVoiceHelper.VoiceItem.languageCode]. Passed through to
+     * sherpa-onnx via {@link OfflineTtsKokoroModelConfig#setLang}.
+     * Default empty string = use the voice's catalog language.
+     *
+     * Only meaningful on KokoroEngine — VoiceEngine (Piper) uses
+     * espeak-ng's per-language voice files and does not have a
+     * comparable runtime override. Storyvox writes this from
+     * Settings → Voice → per-voice Advanced expander (the dropdown
+     * is suppressed for Piper voices).
+     *
+     * Engine instantiation reads the value at construction time via
+     * [createTtsWithFallback], so a Settings change requires a voice
+     * reload to take effect.
+     */
+    public static volatile String phonemizerLang = "";
+
     private static volatile KokoroEngine instance;
     private OfflineTts tts;
     private String activeModelUri = "";
@@ -171,7 +207,27 @@ public class KokoroEngine {
                 kokoroConfig.setTokens(tokensPath);
                 kokoroConfig.setVoices(voicesBinPath);
                 kokoroConfig.setDataDir(espeakDataPath);
-                kokoroConfig.setLang(langCode);
+
+                // storyvox #198 — phonemizer-language override. When
+                // the static is set (e.g. "es" for Spanish dialogue
+                // inside an English book), use it instead of the
+                // voice metadata's languageCode. Read at construction
+                // time so Settings updates take effect on the next
+                // reload.
+                String overrideLang = phonemizerLang;
+                String effectiveLang =
+                        (overrideLang != null && !overrideLang.isEmpty())
+                                ? overrideLang
+                                : langCode;
+                kokoroConfig.setLang(effectiveLang);
+
+                // storyvox #197 — per-voice lexicon override. Empty
+                // string preserves sherpa-onnx's default (use the
+                // model's built-in lexicon).
+                String lex = voiceLexicon;
+                if (lex != null && !lex.isEmpty()) {
+                    kokoroConfig.setLexicon(lex);
+                }
 
                 OfflineTtsModelConfig modelConfig = new OfflineTtsModelConfig();
                 modelConfig.setKokoro(kokoroConfig);
@@ -225,7 +281,16 @@ public class KokoroEngine {
         cancelRequested = false; // Reset on new load
 
         KokoroVoiceHelper.VoiceItem currentVoice = KokoroVoiceHelper.getById(activeSpeakerId);
-        String targetLangCode = (currentVoice != null) ? currentVoice.languageCode : "en";
+        String voiceLangCode = (currentVoice != null) ? currentVoice.languageCode : "en";
+        // storyvox #198 — phonemizer override participates in the
+        // "already loaded?" cache key so flipping the override between
+        // chapters triggers a reload instead of silently keeping the
+        // old language.
+        String overrideLang = phonemizerLang;
+        String targetLangCode =
+                (overrideLang != null && !overrideLang.isEmpty())
+                        ? overrideLang
+                        : voiceLangCode;
 
         // Avoid reloading if the exact same model and language code are already active
         if (tts != null && activeModelUri.equals(onnxPath) && activeLangCode.equals(targetLangCode)) {

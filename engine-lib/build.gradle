@@ -56,6 +56,15 @@ android {
             ]
             manifest.srcFile 'src/main/AndroidManifest.xml'
         }
+        // Pure-JVM unit tests for the public static knobs on the
+        // engines (sonicQuality, voiceLexicon, phonemizerLang). The
+        // engine classes' static initializer wraps
+        // System.loadLibrary in try/catch, so they load fine on the
+        // JVM with the JNI library absent — sufficient to exercise
+        // the static-field semantics without an emulator/device.
+        test {
+            java.srcDirs += ['src/test/java']
+        }
     }
 
     packaging {
@@ -74,6 +83,13 @@ android {
 
 dependencies {
     implementation 'com.github.k2-fsa:sherpa-onnx:1.12.26'
+
+    // JUnit 4 — engine-lib carries a small set of pure-JVM unit tests
+    // covering the public static knobs (sonicQuality, voiceLexicon,
+    // phonemizerLang) introduced in v2.7.13+. See the comment on the
+    // `test` source set above for why these run on the JVM without
+    // needing an Android emulator.
+    testImplementation 'junit:junit:4.13.2'
 }
 
 // JitPack publishing — invokes `publishToMavenLocal` on a tagged build and

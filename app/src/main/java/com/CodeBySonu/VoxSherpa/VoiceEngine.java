@@ -34,6 +34,26 @@ public class VoiceEngine {
      */
     public static volatile int sonicQuality = 1;
 
+    /**
+     * Per-voice lexicon override (storyvox #197). Comma-separated list
+     * of file paths to .lexicon files passed to sherpa-onnx's
+     * {@link OfflineTtsVitsModelConfig#setLexicon}; the engine reloads
+     * its phonemizer table on the next [loadModel] / [createTts*]
+     * cycle. Default empty string = the model's built-in lexicon (no
+     * override).
+     *
+     * Storyvox sets this from Settings → Voice → per-voice Advanced
+     * expander. Engine instantiation reads the value at construction
+     * time via [_createTtsWithFallback], so a Settings change requires
+     * a voice reload to take effect — storyvox routes the write
+     * through VoiceEngineQualityBridge.applyVoiceLexicon(...) before
+     * triggering its own reload.
+     *
+     * volatile so writes from the Settings thread are visible to the
+     * render thread without an explicit fence.
+     */
+    public static volatile String voiceLexicon = "";
+
     private static volatile VoiceEngine instance;
     private OfflineTts tts;
     private String activeModelUri = "";
@@ -180,6 +200,15 @@ public class VoiceEngine {
                 vits.setNoiseScale(noiseScale);
                 vits.setNoiseScaleW(noiseScaleW);
                 vits.setLengthScale(1.0f);
+                // storyvox #197 — per-voice lexicon override. Read the
+                // static at construction time so any update from a
+                // Settings change is picked up on the next reload.
+                // Empty string preserves sherpa-onnx's default (use
+                // the model's built-in lexicon).
+                String lex = voiceLexicon;
+                if (lex != null && !lex.isEmpty()) {
+                    vits.setLexicon(lex);
+                }
 
                 OfflineTtsModelConfig modelConfig = new OfflineTtsModelConfig();
                 modelConfig.setVits(vits);
