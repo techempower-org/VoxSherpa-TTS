@@ -49,6 +49,13 @@ android {
             java.includes = [
                 'com/CodeBySonu/VoxSherpa/KokoroEngine.java',
                 'com/CodeBySonu/VoxSherpa/VoiceEngine.java',
+                // v2.8.0 (storyvox#119) — third in-process voice family.
+                // Mirrors KokoroEngine's shape (multi-speaker shared
+                // model + speakerId index) but wraps sherpa-onnx's
+                // OfflineTtsKittenModelConfig path. ~25 MB int8 fp16
+                // nano model, 8 voices at 24 kHz, designed for slow
+                // devices where even Piper-low struggles.
+                'com/CodeBySonu/VoxSherpa/KittenEngine.java',
                 'com/CodeBySonu/VoxSherpa/Sonic.java',
                 'com/CodeBySonu/VoxSherpa/AudioEmotionHelper.java',
                 'com/CodeBySonu/VoxSherpa/KokoroVoiceHelper.java',

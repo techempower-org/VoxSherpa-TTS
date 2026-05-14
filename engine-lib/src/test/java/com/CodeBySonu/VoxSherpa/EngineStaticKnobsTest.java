@@ -14,6 +14,7 @@ import org.junit.Test;
  *   - {@link VoiceEngine#voiceLexicon}        (v2.7.14, storyvox#197)
  *   - {@link KokoroEngine#voiceLexicon}       (v2.7.14, storyvox#197)
  *   - {@link KokoroEngine#phonemizerLang}     (v2.7.14, storyvox#198)
+ *   - {@link KittenEngine#sonicQuality}       (v2.8.0, storyvox#119)
  *
  * These tests intentionally run on the plain JVM (no Robolectric, no
  * emulator) — the engine classes' static initializer wraps
@@ -43,6 +44,7 @@ public class EngineStaticKnobsTest {
         KokoroEngine.sonicQuality = 1;
         KokoroEngine.voiceLexicon = "";
         KokoroEngine.phonemizerLang = "";
+        KittenEngine.sonicQuality = 1;
     }
 
     /**
@@ -63,6 +65,10 @@ public class EngineStaticKnobsTest {
         assertEquals(1, KokoroEngine.sonicQuality);
         assertEquals("", KokoroEngine.voiceLexicon);
         assertEquals("", KokoroEngine.phonemizerLang);
+        // v2.8.0 — KittenEngine joins the family with the sonicQuality
+        // knob (no lexicon/lang knobs because OfflineTtsKittenModelConfig
+        // doesn't expose those today). Default 1 matches the other two.
+        assertEquals(1, KittenEngine.sonicQuality);
 
         // Round-trip on each field
         VoiceEngine.sonicQuality = 0;
@@ -88,6 +94,14 @@ public class EngineStaticKnobsTest {
         // Reset back to default — verify the empty-string clear works
         KokoroEngine.phonemizerLang = "";
         assertEquals("", KokoroEngine.phonemizerLang);
+
+        // v2.8.0 — Kitten's sonicQuality field. Storyvox writes all
+        // three engines together when the user flips the quality toggle
+        // in Settings → Voice & Playback, so the round-trip semantics
+        // must match Kokoro's exactly. 0 → upstream-default (faster),
+        // 1 → higher-quality (engine-side default since #193).
+        KittenEngine.sonicQuality = 0;
+        assertEquals(0, KittenEngine.sonicQuality);
     }
 
     /**
@@ -110,16 +124,23 @@ public class EngineStaticKnobsTest {
         VoiceEngine.voiceLexicon = "/initial/lex.lexicon";
         KokoroEngine.voiceLexicon = "/initial/k.lexicon";
         KokoroEngine.phonemizerLang = "en";
+        KittenEngine.sonicQuality = 0;
 
         VoiceEngine v = new VoiceEngine();
         KokoroEngine k = new KokoroEngine();
+        // v2.8.0 — KittenEngine joins the no-arg-ctor club for the same
+        // multi-instance-parallelism reason VoiceEngine/KokoroEngine did
+        // (each instance owns its own onnxruntime session).
+        KittenEngine kit = new KittenEngine();
         assertNotNull(v);
         assertNotNull(k);
+        assertNotNull(kit);
 
         // Mutate AFTER construction.
         VoiceEngine.voiceLexicon = "/after/lex.lexicon";
         KokoroEngine.voiceLexicon = "/after/k.lexicon";
         KokoroEngine.phonemizerLang = "fr";
+        KittenEngine.sonicQuality = 1;
 
         // The static read must return the post-construction value —
         // the engines do NOT cache it into instance state. The on-
@@ -128,5 +149,6 @@ public class EngineStaticKnobsTest {
         assertEquals("/after/lex.lexicon", VoiceEngine.voiceLexicon);
         assertEquals("/after/k.lexicon", KokoroEngine.voiceLexicon);
         assertEquals("fr", KokoroEngine.phonemizerLang);
+        assertEquals(1, KittenEngine.sonicQuality);
     }
 }
