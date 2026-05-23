@@ -6,6 +6,16 @@ All notable changes to VoxSherpa TTS are documented here.
 
 ---
 
+
+## [4.1] — Shortcuts Futures
+
+- Text History
+- Clear Text Button
+- Paste Button
+- Speech-to-Text Button
+
+---
+
 ## [4.0] — Dialogue Engine Update
 
 - Added multi-speaker voice generation
