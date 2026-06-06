@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Changelog — VoxSherpa TTS</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Syne:wght@400;700;800&family=JetBrains+Mono:wght@300;400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+  <style>
+    .version-tag {
+      display: inline-block;
+      padding: 4px 12px;
+      background: var(--blue-dim);
+      color: var(--blue);
+      border: 1px solid rgba(29, 97, 255, 0.3);
+      border-radius: 2px;
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+    .change-list {
+      list-style: none;
+      margin-left: 20px;
+    }
+    .change-list li::before {
+      content: "→";
+      color: var(--blue);
+      margin-right: 10px;
+      font-weight: bold;
+    }
+    .release-date {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="container">
+      <a href="../../index.html" class="logo">Vox<span>Sherpa</span></a>
+      <div class="nav-links">
+        <a href="../../index.html">Home</a>
+        <a href="../models/index.html">Models</a>
+        <a href="index.html" class="active">Changelog</a>
+        <a href="../feedback/index.html">Feedback</a>
+        <a href="../survey/index.html">Survey</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="container">
+      <div class="section-label">History</div>
+      <h1 class="section-title">Release <span class="hl">Changelog</span></h1>
+      <p style="color:var(--text-mid); max-width:600px; margin:0 auto;">Track every update, improvement, and fix in the journey of VoxSherpa TTS.</p>
+    </div>
+  </header>
+
+  <section>
+    <div class="container">
+      
+      <div class="card">
+        <div class="version-tag">v4.1 — Shortcuts Futures</div>
+        <div class="release-date">Released: June 2026</div>
+        <ul class="change-list">
+          <li>Text History</li>
+          <li>Clear Text Button</li>
+          <li>Paste Button</li>
+          <li>Speech-to-Text Button</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="version-tag">v4.0 — Dialogue Engine Update</div>
+        <div class="release-date">Released: May 2026</div>
+        <ul class="change-list">
+          <li>Added multi-speaker voice generation</li>
+          <li>Piper now supports multiple speakers in a single script</li>
+          <li>New <code>[speaker]</code> tag system for dialogue synthesis</li>
+          <li>Voice Style & Tone controls</li>
+          <li>Adjustable sentence gap / silence timing</li>
+          <li>Improved conversational speech flow</li>
+          <li>Enhanced script parsing engine</li>
+          <li>Better natural pause handling</li>
+          <li>UI refinements and stability improvements</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="version-tag">v2.9.1 — Chinese Text Crash Hotfix</div>
+        <div class="release-date">Released: April 2026</div>
+        <ul class="change-list">
+          <li>Fixed crash on Chinese text input</li>
+          <li>Improved multilingual character support</li>
+          <li>Stability improvements</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="version-tag">v2.9 — Bug Fixes</div>
+        <ul class="change-list">
+          <li>Revealed all downloaded models to System TTS</li>
+          <li>Bug fixes</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="version-tag">v2.8 — Sample Voices</div>
+        <ul class="change-list">
+          <li>System TTS upgrade</li>
+          <li>Sample voice preview added for all models</li>
+        </ul>
+      </div>
+
+      <div style="text-align:center; margin-top:40px;">
+        <a href="https://github.com/CodeBySonu95/VoxSherpa-TTS/blob/main/docs/CHANGELOG.md" class="btn btn-outline">View Full History on GitHub</a>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <div class="footer-logo">Vox<span>Sherpa</span></div>
+      <p class="footer-text">Built with obsession. Runs without internet.</p>
+      <p class="footer-text" style="margin-top:8px;">&copy; 2026 CodeBySonu95</p>
+    </div>
+  </footer>
+</body>
+</html>

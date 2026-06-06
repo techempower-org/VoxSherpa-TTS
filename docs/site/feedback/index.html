@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Feedback — VoxSherpa TTS</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Syne:wght@400;700;800&family=JetBrains+Mono:wght@300;400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <nav>
+    <div class="container">
+      <a href="../../index.html" class="logo">Vox<span>Sherpa</span></a>
+      <div class="nav-links">
+        <a href="../../index.html">Home</a>
+        <a href="../models/index.html">Models</a>
+        <a href="../changelog/index.html">Changelog</a>
+        <a href="index.html" class="active">Feedback</a>
+        <a href="../survey/index.html">Survey</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="container">
+      <div class="section-label">Community</div>
+      <h1 class="section-title">Your <span class="hl">Feedback</span></h1>
+      <p style="color:var(--text-mid); max-width:600px; margin:0 auto;">Help us make VoxSherpa better. Share your thoughts, report bugs, or suggest new features.</p>
+    </div>
+  </header>
+
+  <section>
+    <div class="container">
+      <div class="card" style="max-width:600px; margin:0 auto;">
+        <form id="feedbackForm">
+          <div class="form-group">
+            <label for="name">Name</label>
+            <input type="text" id="name" placeholder="Your name" required>
+          </div>
+          <div class="form-group">
+            <label for="email">Email (Optional)</label>
+            <input type="email" id="email" placeholder="your@email.com">
+          </div>
+          <div class="form-group">
+            <label for="type">Feedback Type</label>
+            <select id="type">
+              <option value="suggestion">Suggestion</option>
+              <option value="bug">Bug Report</option>
+              <option value="compliment">Compliment</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="message">Message</label>
+            <textarea id="message" rows="5" placeholder="Tell us what's on your mind..." required></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">Send Feedback</button>
+        </form>
+        <div id="successMsg" style="display:none; text-align:center; color:var(--green); margin-top:20px;">
+          <p>Thank you! Your feedback has been sent (simulated).</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="container">
+      <div class="footer-logo">Vox<span>Sherpa</span></div>
+      <p class="footer-text">Built with obsession. Runs without internet.</p>
+      <p class="footer-text" style="margin-top:8px;">&copy; 2026 CodeBySonu95</p>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById('feedbackForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      // In a real scenario, you'd use a service like Formspree or a Google Form action
+      document.getElementById('feedbackForm').style.display = 'none';
+      document.getElementById('successMsg').style.display = 'block';
+      console.log("Feedback submitted:", {
+        name: document.getElementById('name').value,
+        email: document.getElementById('email').value,
+        type: document.getElementById('type').value,
+        message: document.getElementById('message').value
+      });
+    });
+  </script>
+</body>
+</html>
