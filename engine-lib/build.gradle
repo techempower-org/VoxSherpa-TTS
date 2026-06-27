@@ -56,6 +56,13 @@ android {
                 // nano model, 8 voices at 24 kHz, designed for slow
                 // devices where even Piper-low struggles.
                 'com/CodeBySonu/VoxSherpa/KittenEngine.java',
+                // v2.9.0 (storyvox#1114) — fourth in-process voice family.
+                // Wraps sherpa-onnx's OfflineTtsSupertonicModelConfig +
+                // GenerationConfig path (Supertonic 3: 7-file int8 bundle,
+                // 10 voices at 24 kHz, unicode-tokenised flow-matching
+                // model — no espeak dependency). Requires sherpa-onnx
+                // 1.13.x for the Supertonic config / generateWithConfig API.
+                'com/CodeBySonu/VoxSherpa/SupertonicEngine.java',
                 'com/CodeBySonu/VoxSherpa/Sonic.java',
                 'com/CodeBySonu/VoxSherpa/AudioEmotionHelper.java',
                 'com/CodeBySonu/VoxSherpa/KokoroVoiceHelper.java',
@@ -89,7 +96,20 @@ android {
 }
 
 dependencies {
-    implementation 'com.github.k2-fsa:sherpa-onnx:1.12.26'
+    // v2.9.0 (storyvox#1114) — bumped 1.12.26 → 1.13.3 for the Supertonic 3
+    // API (OfflineTtsSupertonicModelConfig, GenerationConfig,
+    // generateWithConfig / generateWithConfigAndCallback). Matches the
+    // sherpa-onnx version storyvox's :core-playback already pins.
+    implementation 'com.github.k2-fsa:sherpa-onnx:1.13.3'
+
+    // storyvox#1114 — SupertonicEngine's streaming path implements
+    // kotlin.jvm.functions.Function1 (the callback type sherpa-onnx's
+    // generateWithConfigAndCallback expects). sherpa-onnx is a Kotlin AAR
+    // so kotlin-stdlib is already on the RUNTIME classpath transitively;
+    // it just isn't exposed to *Java* compilation. compileOnly puts
+    // Function1 on the javac classpath without adding kotlin-stdlib to the
+    // published POM (consumers like storyvox are Kotlin and already carry it).
+    compileOnly 'org.jetbrains.kotlin:kotlin-stdlib:1.9.0'
 
     // JUnit 4 — engine-lib carries a small set of pure-JVM unit tests
     // covering the public static knobs (sonicQuality, voiceLexicon,
