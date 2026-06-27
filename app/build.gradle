@@ -66,6 +66,14 @@ dependencies {
     implementation platform('com.google.firebase:firebase-bom:34.1.0')
     implementation 'com.google.firebase:firebase-database'
     implementation 'com.google.code.gson:gson:2.11.0'
-    implementation 'com.github.k2-fsa:sherpa-onnx:1.12.26'
+    // storyvox#1114 — 1.12.26 → 1.13.3 for the Supertonic 3 API. The :app
+    // module compiles the whole VoxSherpa source tree (including the new
+    // SupertonicEngine.java), so it needs the same sherpa-onnx version as
+    // :engine-lib or the Supertonic config classes won't resolve.
+    implementation 'com.github.k2-fsa:sherpa-onnx:1.13.3'
+    // storyvox#1114 — Function1 (kotlin-stdlib) for SupertonicEngine's
+    // streaming callback; compileOnly because sherpa-onnx already supplies
+    // kotlin-stdlib at runtime. See the matching note in :engine-lib.
+    compileOnly 'org.jetbrains.kotlin:kotlin-stdlib:1.9.0'
     implementation 'com.tom-roush:pdfbox-android:2.0.27.0'
 }
