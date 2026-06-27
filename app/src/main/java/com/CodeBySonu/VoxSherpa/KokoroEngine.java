@@ -77,6 +77,11 @@ public class KokoroEngine {
     private Context activeContext = null;
     private String activeLangCode = "";
     private String espeakDataPath = "";
+    // Upstream Chinese-frontend support: extracted location of
+    // tts_frontend.zip (lexicon-zh, Jieba dict, zh FST rules). Populated
+    // by [extractTtsFrontendData]; consumed in [createTtsWithFallback]
+    // when no per-voice lexicon override (storyvox #197) is set.
+    private String ttsFrontendDataPath = "";
     private int activeSpeakerId = 31;
     private volatile boolean cancelRequested = false;
 
@@ -190,6 +195,42 @@ public class KokoroEngine {
                 : destDir.getAbsolutePath();
     }
 
+    // ── tts_frontend extract (Chinese lexicon + Jieba dictionaries) ──────────
+    // Upstream "Chinese Voice crash fix" (CodeBySonu95). Unpacks
+    // tts_frontend.zip into files/tts_frontend_data on first use; the
+    // extracted lexicons + Jieba dict + FST rules let Kokoro render
+    // Chinese without crashing eSpeak on out-of-vocabulary words.
+    private synchronized void extractTtsFrontendData(Context context) {
+        if (context == null) return;
+        File destDir = new File(context.getFilesDir(), "tts_frontend_data");
+        String[] existing = destDir.list();
+
+        if (!destDir.exists() || existing == null || existing.length == 0) {
+            destDir.mkdirs();
+            try (InputStream is = context.getAssets().open("tts_frontend.zip");
+                 ZipInputStream zis = new ZipInputStream(is)) {
+
+                ZipEntry ze;
+                byte[] buffer = new byte[32768];
+                while ((ze = zis.getNextEntry()) != null) {
+                    File newFile = new File(destDir, ze.getName());
+                    if (ze.isDirectory()) {
+                        newFile.mkdirs();
+                    } else {
+                        File parent = newFile.getParentFile();
+                        if (parent != null && !parent.exists()) parent.mkdirs();
+                        try (FileOutputStream fos = new FileOutputStream(newFile)) {
+                            int len;
+                            while ((len = zis.read(buffer)) > 0) fos.write(buffer, 0, len);
+                        }
+                    }
+                    zis.closeEntry();
+                }
+            } catch (Exception ignored) {}
+        }
+        ttsFrontendDataPath = destDir.getAbsolutePath();
+    }
+
     // ── Provider fallback: XNNPACK → CPU ────────────────────────────────────
     private OfflineTts createTtsWithFallback(String onnxPath, String tokensPath, String voicesBinPath) {
         String[] providers = {"xnnpack", "cpu"};
@@ -208,25 +249,57 @@ public class KokoroEngine {
                 kokoroConfig.setVoices(voicesBinPath);
                 kokoroConfig.setDataDir(espeakDataPath);
 
-                // storyvox #198 — phonemizer-language override. When
-                // the static is set (e.g. "es" for Spanish dialogue
-                // inside an English book), use it instead of the
-                // voice metadata's languageCode. Read at construction
-                // time so Settings updates take effect on the next
-                // reload.
+                // ── Phonemizer language ──────────────────────────────────
+                // storyvox #198 — an explicit phonemizer-language override
+                // wins (e.g. "es" for Spanish dialogue inside an English
+                // book). Otherwise fall back to upstream's per-speaker
+                // behavior: Chinese (zh) is remapped to "en-us" to prevent
+                // an eSpeak crash on out-of-vocabulary words; every other
+                // language passes its native langCode so eSpeak-ng loads the
+                // right dictionary. Read at construction time so Settings
+                // updates take effect on the next reload.
                 String overrideLang = phonemizerLang;
-                String effectiveLang =
-                        (overrideLang != null && !overrideLang.isEmpty())
-                                ? overrideLang
-                                : langCode;
+                String effectiveLang;
+                if (overrideLang != null && !overrideLang.isEmpty()) {
+                    effectiveLang = overrideLang;
+                } else if ("zh".equalsIgnoreCase(langCode)) {
+                    effectiveLang = "en-us";
+                } else {
+                    effectiveLang = langCode;
+                }
                 kokoroConfig.setLang(effectiveLang);
 
-                // storyvox #197 — per-voice lexicon override. Empty
-                // string preserves sherpa-onnx's default (use the
-                // model's built-in lexicon).
+                OfflineTtsConfig config = new OfflineTtsConfig();
+
+                // ── Lexicon / Chinese frontend ───────────────────────────
+                // storyvox #197 — an explicit per-voice lexicon override
+                // replaces the default lexicon wiring (empty string = no
+                // override). When unset, fall back to upstream's
+                // multi-lingual setup: English + Chinese lexicons, the Jieba
+                // segmentation dictionary, and the Chinese FST rules
+                // (phone/date/number) extracted from tts_frontend.zip.
                 String lex = voiceLexicon;
                 if (lex != null && !lex.isEmpty()) {
                     kokoroConfig.setLexicon(lex);
+                } else if (ttsFrontendDataPath != null && !ttsFrontendDataPath.isEmpty()) {
+                    String lexiconEn = new File(ttsFrontendDataPath, "lexicon-us-en.txt").getAbsolutePath();
+                    String lexiconZh = new File(ttsFrontendDataPath, "lexicon-zh.txt").getAbsolutePath();
+
+                    // Always set both lexicons for multi-language support
+                    kokoroConfig.setLexicon(lexiconEn + "," + lexiconZh);
+
+                    // Set Jieba dictionary directory for Chinese word segmentation
+                    File dictFolder = new File(ttsFrontendDataPath, "dict");
+                    if (dictFolder.exists()) {
+                        kokoroConfig.setDictDir(dictFolder.getAbsolutePath());
+                    }
+
+                    // Set FST rules for Chinese parsing
+                    String phoneZh = new File(ttsFrontendDataPath, "phone-zh.fst").getAbsolutePath();
+                    String dateZh = new File(ttsFrontendDataPath, "date-zh.fst").getAbsolutePath();
+                    String numberZh = new File(ttsFrontendDataPath, "number-zh.fst").getAbsolutePath();
+
+                    config.setRuleFsts(phoneZh + "," + dateZh + "," + numberZh);
                 }
 
                 OfflineTtsModelConfig modelConfig = new OfflineTtsModelConfig();
@@ -235,7 +308,6 @@ public class KokoroEngine {
                 modelConfig.setProvider(provider);
                 modelConfig.setDebug(false);
 
-                OfflineTtsConfig config = new OfflineTtsConfig();
                 config.setModel(modelConfig);
                 // jphein fork: keep maxNumSentences=3 (storyvox batches
                 // sentences with internal periods like "Mr. Smith ran.";
@@ -312,6 +384,7 @@ public class KokoroEngine {
         try {
             destroy();
             extractEspeakData(context);
+            extractTtsFrontendData(context); // upstream: Chinese lexicon + dictionaries
 
             if (espeakDataPath == null || espeakDataPath.isEmpty())
                 return "Error: espeak-ng-data extraction failed.";
