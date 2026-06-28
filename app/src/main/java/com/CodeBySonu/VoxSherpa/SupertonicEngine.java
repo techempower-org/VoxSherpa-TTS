@@ -201,11 +201,16 @@ public class SupertonicEngine {
         return 1;
     }
 
-    // ── Provider fallback: XNNPACK → CPU ────────────────────────────────────
+    // ── Provider: CPU only ─────────────────────────────────────────────────
+    // Supertonic's int8 ONNX graphs trigger a SIGSEGV inside XNNPACK on
+    // ARM64 during session creation. Native crashes bypass the Java
+    // try/catch fallback, so the process dies before the CPU retry runs.
+    // CPU provider is reliable; the latency difference is negligible for
+    // the flow-matching architecture.
     private OfflineTts createTtsWithFallback(
             String durationPredictor, String textEncoder, String vectorEstimator,
             String vocoder, String ttsJson, String unicodeIndexer, String voiceStyle) {
-        String[] providers = {"xnnpack", "cpu"};
+        String[] providers = {"cpu"};
 
         for (String provider : providers) {
             try {
