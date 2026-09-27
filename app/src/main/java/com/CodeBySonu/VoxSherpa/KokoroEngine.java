@@ -67,7 +67,27 @@ public class KokoroEngine {
     public static volatile String phonemizerLang = "";
 
     private static volatile KokoroEngine instance;
-    private OfflineTts tts;
+    private volatile OfflineTts tts;
+
+    // Use-after-free guard (ported from upstream CodeBySonu95 v4.0
+    // "nativeLock"). Every native call on `tts` from generateAudioPCM and
+    // every release() of an OfflineTts run while holding this lock, so a
+    // concurrent destroy()/loadModel()/setter-reload can never free the
+    // native pointer while JNI generate(...) is still dereferencing it.
+    // Unlike upstream, release stays SYNCHRONOUS (destroy() waits for an
+    // in-flight sentence to finish) so two models are never resident at
+    // once during a voice swap, and a busy engine does NOT return null
+    // for a concurrent generate - callers simply serialize.
+    // Lock order: `this` -> nativeLock. Code holding nativeLock must never
+    // take `this`.
+    private final Object nativeLock = new Object();
+
+    private void releaseNative(OfflineTts t) {
+        if (t == null) return;
+        synchronized (nativeLock) {
+            try { t.release(); } catch (Throwable ignored) {}
+        }
+    }
     private String activeModelUri = "";
     // Tracks language context AND tokens/voices-bin paths + Context so
     // [setSilenceScale] (storyvox PR) can rebuild OfflineTts mid-session
@@ -341,16 +361,19 @@ public class KokoroEngine {
         if (cancelRequested) return null;
         if (inputText == null || inputText.trim().isEmpty()) return null;
 
-        OfflineTts localTts;
-        synchronized (this) {
-            if (tts == null) return null;
-            localTts = tts; 
-        }
-
         try {
             if (cancelRequested) return null;
 
-            GeneratedAudio audio = localTts.generate(inputText.trim(), activeSpeakerId, speedValue);
+            GeneratedAudio audio;
+            int sampleRate;
+            synchronized (nativeLock) {
+                // Read the live engine under nativeLock: a released
+                // OfflineTts is always unpublished from `tts` first.
+                OfflineTts localTts = tts;
+                if (localTts == null) return null;
+                audio = localTts.generate(inputText.trim(), activeSpeakerId, speedValue);
+                sampleRate = localTts.sampleRate();
+            }
 
             if (cancelRequested) return null;
             if (audio == null) return null;
@@ -370,7 +393,6 @@ public class KokoroEngine {
             // Sonic pitch shifting
             if (pitchValue != 1.0f) {
                 if (cancelRequested) return null;
-                int sampleRate = localTts.sampleRate();
                 if (sampleRate > 0) {
                     try {
                         com.CodeBySonu.VoxSherpa.Sonic sonic = new com.CodeBySonu.VoxSherpa.Sonic(sampleRate, 1);
@@ -485,7 +507,7 @@ public class KokoroEngine {
                 activeModelUri, activeTokensUri, activeVoicesBinUri);
         if (replacement != null) {
             tts = replacement;
-            try { old.release(); } catch (Throwable ignored) {}
+            releaseNative(old);
         }
         // If replacement fails, we keep the old engine — better to
         // play with the previous silence scale than to drop into a
@@ -501,8 +523,9 @@ public class KokoroEngine {
     public synchronized void destroy() {
         cancelRequested = false;
         if (tts != null) {
-            try { tts.release(); } catch (Throwable ignored) {}
+            OfflineTts old = tts;
             tts = null;
+            releaseNative(old);
             activeModelUri = "";
             activeTokensUri = "";
             activeVoicesBinUri = "";

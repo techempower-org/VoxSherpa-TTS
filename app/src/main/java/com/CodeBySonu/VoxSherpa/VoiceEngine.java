@@ -55,7 +55,27 @@ public class VoiceEngine {
     public static volatile String voiceLexicon = "";
 
     private static volatile VoiceEngine instance;
-    private OfflineTts tts;
+    private volatile OfflineTts tts;
+
+    // Use-after-free guard (ported from upstream CodeBySonu95 v4.0
+    // "nativeLock"). Every native call on `tts` from generateAudioPCM and
+    // every release() of an OfflineTts run while holding this lock, so a
+    // concurrent destroy()/loadModel()/setter-reload can never free the
+    // native pointer while JNI generate(...) is still dereferencing it.
+    // Unlike upstream, release stays SYNCHRONOUS (destroy() waits for an
+    // in-flight sentence to finish) so two models are never resident at
+    // once during a voice swap, and a busy engine does NOT return null
+    // for a concurrent generate - callers simply serialize.
+    // Lock order: `this` -> nativeLock. Code holding nativeLock must never
+    // take `this`.
+    private final Object nativeLock = new Object();
+
+    private void releaseNative(OfflineTts t) {
+        if (t == null) return;
+        synchronized (nativeLock) {
+            try { t.release(); } catch (Throwable ignored) {}
+        }
+    }
     private String activeModelUri = "";
     private String activeTokensUri = "";
     private String espeakDataPath = "";
@@ -293,16 +313,19 @@ public class VoiceEngine {
         if (cancelRequested) return null;
         if (inputText == null || inputText.trim().isEmpty()) return null;
 
-        OfflineTts localTts;
-        synchronized (this) {
-            if (tts == null) return null;
-            localTts = tts;
-        }
-
         try {
             if (cancelRequested) return null;
 
-            GeneratedAudio audio = localTts.generate(inputText.trim(), 0, speedValue);
+            GeneratedAudio audio;
+            int sampleRate;
+            synchronized (nativeLock) {
+                // Read the live engine under nativeLock: a released
+                // OfflineTts is always unpublished from `tts` first.
+                OfflineTts localTts = tts;
+                if (localTts == null) return null;
+                audio = localTts.generate(inputText.trim(), 0, speedValue);
+                sampleRate = localTts.sampleRate();
+            }
 
             if (cancelRequested) return null;
 
@@ -320,7 +343,6 @@ public class VoiceEngine {
 
             if (pitchValue != 1.0f) {
                 if (cancelRequested) return null;
-                int sampleRate = localTts.sampleRate();
                 com.CodeBySonu.VoxSherpa.Sonic sonic = new com.CodeBySonu.VoxSherpa.Sonic(sampleRate, 1);
                 // storyvox #193 — Sonic quality is parameterized via the
                 // public static field VoiceEngine.sonicQuality (default 1).
@@ -366,8 +388,9 @@ public class VoiceEngine {
     public synchronized void destroy() {
         cancelRequested = false;
         if (tts != null) {
-            try { tts.release(); } catch (Throwable ignored) {}
+            OfflineTts old = tts;
             tts = null;
+            releaseNative(old);
             activeModelUri = "";
             activeTokensUri = "";
         }
@@ -390,12 +413,11 @@ public class VoiceEngine {
     //    `OfflineTts` with the new config. This blocks for ~1-3s on Piper.
     //  • If no model is loaded, the new value is stored and applied on the
     //    next loadModel() call.
-    //  • Calling during synthesis: the synchronized monitor on the engine
-    //    serializes against loadModel/destroy, but a thread already inside
-    //    `generateAudioPCM` past the synchronized block holds a `localTts`
-    //    reference and may finish a generation against the *old* config
-    //    before observing the swap. cancelRequested is raised so cooperating
-    //    callers bail early. This matches `loadModel`'s existing semantics.
+    //  • Calling during synthesis: the old OfflineTts is released under
+    //    nativeLock, so this waits for an in-flight generate(...) to finish
+    //    (no use-after-free). A generate that starts while the engine is
+    //    being rebuilt sees `tts == null` and returns null.
+    //    cancelRequested is raised so cooperating callers bail early.
     //
     // No-op if the supplied value equals the currently-active value, so
     // settings UIs can call freely without forcing a reload.
@@ -431,8 +453,9 @@ public class VoiceEngine {
         String model = activeModelUri;
         String tokens = activeTokensUri;
 
-        try { tts.release(); } catch (Throwable ignored) {}
+        OfflineTts old = tts;
         tts = null;
+        releaseNative(old);
         activeModelUri = "";
         activeTokensUri = "";
 
